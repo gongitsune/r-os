@@ -1,0 +1,16 @@
+[tasks.build-loader]
+description = "Builds a loader"
+command = "cargo"
+args = [
+  "build",
+  "--manifest-path",
+  "./loader/Cargo.toml",
+  "--config",
+  "./loader/.cargo/config.toml",
+]
+
+[tasks.run-qemu]
+description = "Runs the OS in QEMU"
+command = "./devenv/run_qemu.sh"
+args = ["./loader/target/x86_64-unknown-uefi/debug/loader.efi"]
+dependencies = ["build-loader"]
