@@ -9,8 +9,22 @@ args = [
   "./loader/.cargo/config.toml",
 ]
 
+[tasks.build-kernel]
+description = "Builds the kernel"
+command = "cargo"
+args = [
+  "build",
+  "--manifest-path",
+  "./kernel/Cargo.toml",
+  "--config",
+  "./kernel/.cargo/config.toml",
+]
+
 [tasks.run-qemu]
 description = "Runs the OS in QEMU"
 command = "./devenv/run_qemu.sh"
-args = ["./loader/target/x86_64-unknown-uefi/debug/loader.efi"]
-dependencies = ["build-loader"]
+args = [
+  "./loader/target/x86_64-unknown-uefi/debug/loader.efi",
+  "./kernel/target/x86_64-unknown-none-elf/kernel.elf",
+]
+dependencies = ["build-loader", "build-kernel"]

@@ -17,7 +17,8 @@
     "ld.lld": [
       "--entry=kernel_main",
       "--image-base=0x100000",
-      "-okernel.elf",
+      "-o",
+      "./target/x86_64-unknown-none-elf//kernel.elf",
       "--static"
     ]
   },
