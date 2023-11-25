@@ -17,7 +17,6 @@ panic = "abort"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-byteorder = { version = "1.5.0", default-features = false }
 goblin = { version = "0.7.1", default-features = false, features = [
   "elf64",
   "alloc",

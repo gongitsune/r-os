@@ -4,18 +4,17 @@
 #[macro_use]
 extern crate alloc;
 
-use core::mem;
-
 use alloc::format;
-use byteorder::{ByteOrder, LittleEndian};
-use log::info;
+use core::{arch::asm, mem};
+use goblin::elf;
+use log::trace;
 use uefi::{
     prelude::*,
     proto::media::file::{File, FileAttribute, FileInfo, FileMode},
     table::boot::{AllocateType, MemoryDescriptor, MemoryType},
 };
 
-const KERNEL_BASE_ADDR: u64 = 0x100000;
+const EFI_PAGE_SIZE: u64 = 0x1000;
 
 #[entry]
 fn efi_main(handle: Handle, mut st: SystemTable<Boot>) -> Status {
@@ -23,37 +22,27 @@ fn efi_main(handle: Handle, mut st: SystemTable<Boot>) -> Status {
     st.stdout().reset(false).unwrap();
 
     dump_mem_map(handle, &st);
-    load_kernel(handle, &st);
+    let entry_point_addr = load_kernel(handle, &st);
 
-    // stop boot service
-    start_kernel(st);
+    trace!("entry_point_addr: {:p}", entry_point_addr as *const ());
+    let entry_point: extern "sysv64" fn() = unsafe { mem::transmute(entry_point_addr) };
+    entry_point();
 
-    Status::SUCCESS
+    loop {
+        unsafe {
+            asm!("hlt");
+        }
+    }
 }
 
-fn start_kernel(st: SystemTable<Boot>) {
-    info!("start kernel");
-
-    let kernel_entry_addr = LittleEndian::read_u64(unsafe {
-        core::slice::from_raw_parts((KERNEL_BASE_ADDR + 24) as *const u8, mem::size_of::<u64>())
-    });
-    info!("kernel_entry_addr: {:p}", kernel_entry_addr as *const ());
-
-    let _ = st.exit_boot_services(MemoryType::LOADER_DATA);
-
-    let kernel_entry: extern "sysv64" fn() = unsafe { mem::transmute(kernel_entry_addr) };
-    kernel_entry();
-
-    panic!("kernel returned");
-}
-
-fn load_kernel(handle: Handle, st: &SystemTable<Boot>) {
-    info!("load kernel");
-
+fn load_kernel(image: Handle, st: &SystemTable<Boot>) -> u64 {
     let bt = st.boot_services();
-    let mut fs = bt.get_image_file_system(handle).unwrap();
 
-    let mut root_dir = fs.open_volume().unwrap();
+    let mut root_dir = bt
+        .get_image_file_system(image)
+        .unwrap()
+        .open_volume()
+        .unwrap();
     let mut elf_file = root_dir
         .open(
             cstr16!("kernel.elf"),
@@ -63,26 +52,46 @@ fn load_kernel(handle: Handle, st: &SystemTable<Boot>) {
         .unwrap()
         .into_regular_file()
         .unwrap();
+    let mut elf_buf =
+        vec![0_u8; elf_file.get_boxed_info::<FileInfo>().unwrap().file_size() as usize];
+    elf_file.read(&mut elf_buf).unwrap();
+    let elf = elf::Elf::parse(&elf_buf).unwrap();
 
-    let file_info = elf_file.get_boxed_info::<FileInfo>().unwrap();
-    let size = file_info.file_size() as usize;
+    let mut dest_first = u64::MAX;
+    let mut dest_last = 0_u64;
+    for ph in elf.program_headers.iter() {
+        if ph.p_type != elf::program_header::PT_LOAD {
+            continue;
+        }
+        dest_first = dest_first.min(ph.p_vaddr);
+        dest_last = dest_last.max(ph.p_vaddr + ph.p_memsz);
+    }
 
-    bt.allocate_pages(
-        AllocateType::Address(KERNEL_BASE_ADDR),
-        MemoryType::LOADER_DATA,
-        (size as usize + 0xfff) / 0x1000,
-    )
-    .unwrap();
-
-    elf_file
-        .read(unsafe { core::slice::from_raw_parts_mut(KERNEL_BASE_ADDR as *mut u8, size) })
+    st.boot_services()
+        .allocate_pages(
+            AllocateType::Address(dest_first),
+            MemoryType::LOADER_DATA,
+            ((dest_last - dest_first + EFI_PAGE_SIZE - 1) / EFI_PAGE_SIZE) as usize,
+        )
         .unwrap();
 
-    info!("done");
+    for ph in elf.program_headers.iter() {
+        if ph.p_type != elf::program_header::PT_LOAD {
+            continue;
+        }
+        let ofs = ph.p_offset as usize;
+        let fsize = ph.p_filesz as usize;
+        let msize = ph.p_memsz as usize;
+        let dest = unsafe { core::slice::from_raw_parts_mut(ph.p_vaddr as *mut u8, msize) };
+        dest[..fsize].copy_from_slice(&elf_buf[ofs..ofs + fsize]);
+        dest[fsize..].fill(0);
+    }
+
+    elf.entry
 }
 
 fn dump_mem_map(handle: Handle, st: &SystemTable<Boot>) {
-    info!("get_memory_map");
+    trace!("get_memory_map");
 
     let bt = st.boot_services();
     let mm_size = bt.memory_map_size().map_size + 8 * mem::size_of::<MemoryDescriptor>();
@@ -119,5 +128,5 @@ fn dump_mem_map(handle: Handle, st: &SystemTable<Boot>) {
     }
     drop(mm_file);
 
-    info!("done");
+    trace!("done");
 }
