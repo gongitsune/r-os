@@ -7,6 +7,8 @@ fi
 
 DISK_IMG=$1
 DIST_DIR=$2
+OVMF_CODE_FILE=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd
+OVMF_VARS_FILE=$DIST_DIR/OVMF_VARS.fd
 
 if [ ! -f $DISK_IMG ]
 then
@@ -14,14 +16,13 @@ then
     exit 1
 fi
 
-if [ ! -f /copy/of/OVMF_VARS.fd ]
+if [ ! -f $OVMF_VARS_FILE ]
 then
-    cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $DIST_DIR/OVMF_VARS.fd
+    cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd $OVMF_VARS_FILE
     echo "Copied OVMF_VARS.fd to /copy/of/OVMF_VARS.fd"
 fi
 
-OVMF_CODE_FILE=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd
-OVMF_VARS_FILE=$DIST_DIR/OVMF_VARS.fd
+
 
 qemu-system-x86_64 \
     -m 1G \

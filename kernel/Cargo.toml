@@ -1,0 +1,27 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "kernel"
+test = false
+bench = false
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = { version = "0.4.20", default-features = false }
+uefi = { version = "0.26.0", features = [
+  "alloc",
+  "logger",
+  "global_allocator",
+  "unstable",
+] }
+uefi-services = "0.23.0"
